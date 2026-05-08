@@ -3,6 +3,7 @@ import { apiClient } from "./client";
 export type WorkoutType =
   | "LONG_RUN"
   | "INTERVAL"
+  | "TEMPO_RUN"
   | "EASY_RUN"
   | "RECOVERY"
   | "REST"
@@ -12,6 +13,7 @@ export type WorkoutType =
 export const WORKOUT_TYPE_LABELS: Record<WorkoutType, string> = {
   LONG_RUN: "Longo",
   INTERVAL: "Intervalado",
+  TEMPO_RUN: "Ritmado",
   EASY_RUN: "Rodagem",
   RECOVERY: "Regenerativo",
   REST: "Descanso",
@@ -22,6 +24,7 @@ export const WORKOUT_TYPE_LABELS: Record<WorkoutType, string> = {
 export const WORKOUT_TYPE_COLORS: Record<WorkoutType, string> = {
   LONG_RUN: "blue",
   INTERVAL: "red",
+  TEMPO_RUN: "yellow",
   EASY_RUN: "teal",
   RECOVERY: "green",
   REST: "gray",

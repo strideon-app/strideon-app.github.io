@@ -52,6 +52,7 @@ const DAYS: { value: number; short: string; long: string }[] = [
 const WORKOUT_TYPES: WorkoutType[] = [
   "LONG_RUN",
   "INTERVAL",
+  "TEMPO_RUN",
   "EASY_RUN",
   "RECOVERY",
   "REST",
