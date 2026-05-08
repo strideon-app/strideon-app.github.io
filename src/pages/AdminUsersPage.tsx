@@ -13,6 +13,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   addUserToGroup,
@@ -112,9 +113,12 @@ export function AdminUsersPage() {
 
   return (
     <Container size="lg" py="xl">
-      <Title order={2} mb="md">
-        Administração de usuários
-      </Title>
+      <MantineGroup justify="space-between" mb="md">
+        <Title order={2}>Administração de usuários</Title>
+        <Button component={Link} to="/admin/plans" variant="default">
+          Planilhas
+        </Button>
+      </MantineGroup>
 
       {usersQuery.isLoading || groupsQuery.isLoading ? (
         <Text>Carregando...</Text>

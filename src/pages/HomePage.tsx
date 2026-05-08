@@ -110,9 +110,14 @@ export function HomePage() {
                 )}
               </Group>
               {hasGroup("Admin") && (
-                <Button component={Link} to="/admin/users" variant="light" mt="xs">
-                  Administração
-                </Button>
+                <Group gap="xs" mt="xs">
+                  <Button component={Link} to="/admin/plans" variant="light">
+                    Planilhas
+                  </Button>
+                  <Button component={Link} to="/admin/users" variant="light">
+                    Usuários
+                  </Button>
+                </Group>
               )}
             </Stack>
           </Card>

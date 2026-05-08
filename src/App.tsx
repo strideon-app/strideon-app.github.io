@@ -1,6 +1,8 @@
 import { Route, Routes } from "react-router-dom";
 
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
+import { AdminPlanEditorPage } from "@/pages/AdminPlanEditorPage";
+import { AdminPlansPage } from "@/pages/AdminPlansPage";
 import { AdminUsersPage } from "@/pages/AdminUsersPage";
 import { HomePage } from "@/pages/HomePage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -17,6 +19,22 @@ export default function App() {
         element={
           <ProtectedRoute requireGroups={["Admin"]}>
             <AdminUsersPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/plans"
+        element={
+          <ProtectedRoute requireGroups={["Admin"]}>
+            <AdminPlansPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/plans/:planId"
+        element={
+          <ProtectedRoute requireGroups={["Admin"]}>
+            <AdminPlanEditorPage />
           </ProtectedRoute>
         }
       />
