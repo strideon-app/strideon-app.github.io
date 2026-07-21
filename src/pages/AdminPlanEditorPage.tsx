@@ -11,7 +11,6 @@ import {
   Modal,
   NumberInput,
   Paper,
-  Select,
   Stack,
   Switch,
   Table,
@@ -29,8 +28,6 @@ import { Link, useParams } from "react-router-dom";
 import {
   STEP_TYPE_COLORS,
   STEP_TYPE_LABELS,
-  WORKOUT_TYPE_COLORS,
-  WORKOUT_TYPE_LABELS,
   createBlock,
   defaultExecutableStep,
   defaultRepeatStep,
@@ -44,7 +41,6 @@ import {
   type WorkoutBlock,
   type WorkoutBlockPayload,
   type WorkoutStep,
-  type WorkoutType,
 } from "@/api/trainingPlans";
 import { StepEditor } from "@/components/StepEditor";
 import { formatPace } from "@/utils/pace";
@@ -60,17 +56,6 @@ const DAYS: { value: number; short: string; long: string }[] = [
   { value: 7, short: "Dom", long: "Domingo" },
 ];
 
-const WORKOUT_TYPES: WorkoutType[] = [
-  "LONG_RUN",
-  "INTERVAL",
-  "TEMPO_RUN",
-  "EASY_RUN",
-  "RECOVERY",
-  "REST",
-  "STRENGTH",
-  "FREE",
-];
-
 interface BlockModalState {
   open: boolean;
   weekNumber: number;
@@ -79,7 +64,6 @@ interface BlockModalState {
 }
 
 interface BlockDraft {
-  type: WorkoutType;
   title: string;
   description: string;
   steps: WorkoutStep[];
@@ -87,7 +71,6 @@ interface BlockDraft {
 
 function emptyDraft(): BlockDraft {
   return {
-    type: "EASY_RUN",
     title: "",
     description: "",
     steps: defaultWorkoutSteps(),
@@ -216,7 +199,6 @@ function BlockModal({
     const block = state.block;
     if (block) {
       setDraft({
-        type: block.type,
         title: block.title,
         description: block.description ?? "",
         steps: structuredClone(block.steps),
@@ -300,7 +282,6 @@ function BlockModal({
     }
     onSubmit({
       day_of_week: state.dayOfWeek,
-      type: draft.type,
       title: draft.title.trim(),
       description: draft.description.trim() || null,
       steps: draft.steps,
@@ -310,22 +291,13 @@ function BlockModal({
   return (
     <Modal opened={state.open} onClose={onClose} title={title} size="lg">
       <Stack gap="md">
-        <Group grow>
-          <TextInput
-            label="Título do treino"
-            placeholder="Ex.: Intervalado 4×1km"
-            value={draft.title}
-            onChange={(e) => setDraft({ ...draft, title: e.currentTarget.value })}
-            required
-          />
-          <Select
-            label="Categoria"
-            data={WORKOUT_TYPES.map((t) => ({ value: t, label: WORKOUT_TYPE_LABELS[t] }))}
-            value={draft.type}
-            onChange={(v) => v && setDraft({ ...draft, type: v as WorkoutType })}
-            allowDeselect={false}
-          />
-        </Group>
+        <TextInput
+          label="Título do treino"
+          placeholder="Ex.: Intervalado 4×1km"
+          value={draft.title}
+          onChange={(e) => setDraft({ ...draft, title: e.currentTarget.value })}
+          required
+        />
 
         <Stack gap="xs">
           <Title order={5}>Visão geral</Title>
@@ -440,10 +412,10 @@ function BlockCard({
   return (
     <Card p="xs" radius="sm" withBorder shadow="none">
       <Stack gap={4}>
-        <Group justify="space-between" wrap="nowrap" gap={4}>
-          <Badge size="xs" color={WORKOUT_TYPE_COLORS[block.type]} variant="light">
-            {WORKOUT_TYPE_LABELS[block.type]}
-          </Badge>
+        <Group justify="space-between" wrap="nowrap" gap={4} align="flex-start">
+          <Text size="xs" fw={600} lineClamp={2} style={{ flex: 1 }}>
+            {block.title}
+          </Text>
           <Group gap={2} wrap="nowrap">
             <ActionIcon size="xs" variant="subtle" onClick={onEdit} aria-label="Editar">
               ✎
@@ -459,9 +431,6 @@ function BlockCard({
             </ActionIcon>
           </Group>
         </Group>
-        <Text size="xs" fw={600} lineClamp={2}>
-          {block.title}
-        </Text>
         {summary && (
           <Text size="xs" c="dimmed" lineClamp={2}>
             {summary}

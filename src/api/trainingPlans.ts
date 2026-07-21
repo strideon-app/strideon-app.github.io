@@ -1,37 +1,5 @@
 import { apiClient } from "./client";
 
-export type WorkoutType =
-  | "LONG_RUN"
-  | "INTERVAL"
-  | "TEMPO_RUN"
-  | "EASY_RUN"
-  | "RECOVERY"
-  | "REST"
-  | "STRENGTH"
-  | "FREE";
-
-export const WORKOUT_TYPE_LABELS: Record<WorkoutType, string> = {
-  LONG_RUN: "Longo",
-  INTERVAL: "Intervalado",
-  TEMPO_RUN: "Ritmado",
-  EASY_RUN: "Rodagem",
-  RECOVERY: "Regenerativo",
-  REST: "Descanso",
-  STRENGTH: "Fortalecimento",
-  FREE: "Livre",
-};
-
-export const WORKOUT_TYPE_COLORS: Record<WorkoutType, string> = {
-  LONG_RUN: "blue",
-  INTERVAL: "red",
-  TEMPO_RUN: "yellow",
-  EASY_RUN: "teal",
-  RECOVERY: "green",
-  REST: "gray",
-  STRENGTH: "violet",
-  FREE: "orange",
-};
-
 export type WorkoutStepType =
   | "WARMUP"
   | "RUN"
@@ -121,7 +89,6 @@ export interface WorkoutBlock {
   week_id: number;
   day_of_week: number;
   position: number;
-  type: WorkoutType;
   title: string;
   description: string | null;
   steps: WorkoutStep[];
@@ -167,7 +134,6 @@ export interface TrainingPlanUpdatePayload {
 export interface WorkoutBlockPayload {
   day_of_week: number;
   position?: number;
-  type: WorkoutType;
   title: string;
   description?: string | null;
   steps?: WorkoutStep[];
