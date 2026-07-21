@@ -5,10 +5,12 @@ import {
   Button,
   Card,
   Container,
+  Divider,
   Group,
   Loader,
   Modal,
   NumberInput,
+  Paper,
   Select,
   Stack,
   Switch,
@@ -18,26 +20,35 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
+  STEP_TYPE_COLORS,
+  STEP_TYPE_LABELS,
   WORKOUT_TYPE_COLORS,
   WORKOUT_TYPE_LABELS,
   createBlock,
+  defaultExecutableStep,
+  defaultRepeatStep,
+  defaultWorkoutSteps,
   deleteBlock,
   getPlan,
   updateBlock,
   updatePlan,
+  type ExecutableStep,
+  type RepeatStep,
   type WorkoutBlock,
   type WorkoutBlockPayload,
+  type WorkoutStep,
   type WorkoutType,
 } from "@/api/trainingPlans";
-import { formatPace, parsePace } from "@/utils/pace";
+import { StepEditor } from "@/components/StepEditor";
+import { formatPace } from "@/utils/pace";
+import { blockSummary, executableStepShortSummary } from "@/utils/stepSummary";
 
 const DAYS: { value: number; short: string; long: string }[] = [
   { value: 1, short: "Seg", long: "Segunda" },
@@ -60,16 +71,6 @@ const WORKOUT_TYPES: WorkoutType[] = [
   "FREE",
 ];
 
-interface BlockFormValues {
-  type: WorkoutType;
-  title: string;
-  description: string;
-  distance_km: number | "";
-  duration_minutes: number | "";
-  pace_text: string;
-  notes: string;
-}
-
 interface BlockModalState {
   open: boolean;
   weekNumber: number;
@@ -77,15 +78,353 @@ interface BlockModalState {
   block: WorkoutBlock | null;
 }
 
-const emptyForm: BlockFormValues = {
-  type: "EASY_RUN",
-  title: "",
-  description: "",
-  distance_km: "",
-  duration_minutes: "",
-  pace_text: "",
-  notes: "",
-};
+interface BlockDraft {
+  type: WorkoutType;
+  title: string;
+  description: string;
+  steps: WorkoutStep[];
+}
+
+function emptyDraft(): BlockDraft {
+  return {
+    type: "EASY_RUN",
+    title: "",
+    description: "",
+    steps: defaultWorkoutSteps(),
+  };
+}
+
+function StepRow({
+  step,
+  onClick,
+  onRemove,
+}: {
+  step: ExecutableStep;
+  onClick: () => void;
+  onRemove?: () => void;
+}) {
+  return (
+    <Paper
+      withBorder
+      p="xs"
+      radius="sm"
+      style={{ cursor: "pointer" }}
+      onClick={onClick}
+    >
+      <Group justify="space-between" wrap="nowrap" gap="xs">
+        <Group gap="xs" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+          <Badge color={STEP_TYPE_COLORS[step.step_type]} variant="light">
+            {STEP_TYPE_LABELS[step.step_type]}
+          </Badge>
+          <Text size="sm" lineClamp={1}>
+            {executableStepShortSummary(step)}
+          </Text>
+        </Group>
+        {onRemove && (
+          <ActionIcon
+            color="red"
+            variant="subtle"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            aria-label="Remover etapa"
+          >
+            ×
+          </ActionIcon>
+        )}
+      </Group>
+    </Paper>
+  );
+}
+
+function RepeatRow({
+  step,
+  onChangeCount,
+  onAddChild,
+  onChildClick,
+  onChildRemove,
+  onRemove,
+}: {
+  step: RepeatStep;
+  onChangeCount: (count: number) => void;
+  onAddChild: () => void;
+  onChildClick: (childIndex: number) => void;
+  onChildRemove: (childIndex: number) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Paper withBorder p="xs" radius="sm" bg="gray.0">
+      <Stack gap="xs">
+        <Group justify="space-between" wrap="nowrap">
+          <Group gap="xs" align="flex-end">
+            <NumberInput
+              label="Repetir"
+              min={1}
+              max={99}
+              value={step.repeat_count}
+              onChange={(v) => onChangeCount(typeof v === "number" ? v : 1)}
+              w={100}
+              size="xs"
+            />
+            <Text size="sm">vezes</Text>
+          </Group>
+          <ActionIcon color="red" variant="subtle" size="sm" onClick={onRemove}>
+            ×
+          </ActionIcon>
+        </Group>
+        <Stack gap={6}>
+          {step.children.map((child, idx) => (
+            <StepRow
+              key={idx}
+              step={child}
+              onClick={() => onChildClick(idx)}
+              onRemove={() => onChildRemove(idx)}
+            />
+          ))}
+        </Stack>
+        <Button size="xs" variant="subtle" onClick={onAddChild}>
+          + adicionar etapa
+        </Button>
+      </Stack>
+    </Paper>
+  );
+}
+
+interface StepEditorTarget {
+  topIndex: number;
+  childIndex: number | null;
+}
+
+function BlockModal({
+  state,
+  onClose,
+  onSubmit,
+  submitting,
+}: {
+  state: BlockModalState;
+  onClose: () => void;
+  onSubmit: (values: WorkoutBlockPayload) => void;
+  submitting: boolean;
+}) {
+  const [draft, setDraft] = useState<BlockDraft>(emptyDraft());
+  const [editing, setEditing] = useState<StepEditorTarget | null>(null);
+
+  useEffect(() => {
+    if (!state.open) return;
+    const block = state.block;
+    if (block) {
+      setDraft({
+        type: block.type,
+        title: block.title,
+        description: block.description ?? "",
+        steps: structuredClone(block.steps),
+      });
+    } else {
+      setDraft(emptyDraft());
+    }
+    setEditing(null);
+  }, [state.open, state.block]);
+
+  const dayLabel = DAYS.find((d) => d.value === state.dayOfWeek)?.long ?? "";
+  const title = state.block
+    ? `Editar treino — Semana ${state.weekNumber}, ${dayLabel}`
+    : `Novo treino — Semana ${state.weekNumber}, ${dayLabel}`;
+
+  const editingStep: ExecutableStep | null = useMemo(() => {
+    if (!editing) return null;
+    const top = draft.steps[editing.topIndex];
+    if (!top) return null;
+    if (top.kind === "EXECUTABLE") return top;
+    if (editing.childIndex == null) return null;
+    return top.children[editing.childIndex] ?? null;
+  }, [editing, draft.steps]);
+
+  const updateStep = (next: ExecutableStep) => {
+    if (!editing) return;
+    setDraft((d) => {
+      const steps = [...d.steps];
+      const top = steps[editing.topIndex];
+      if (!top) return d;
+      if (top.kind === "EXECUTABLE") {
+        steps[editing.topIndex] = next;
+      } else if (editing.childIndex != null) {
+        const repeat: RepeatStep = {
+          ...top,
+          children: top.children.map((c, i) => (i === editing.childIndex ? next : c)),
+        };
+        steps[editing.topIndex] = repeat;
+      }
+      return { ...d, steps };
+    });
+  };
+
+  const addStep = () => {
+    setDraft((d) => {
+      const steps = [...d.steps];
+      const lastIndex = steps.length - 1;
+      const last = steps[lastIndex];
+      const newStep = defaultExecutableStep("RUN");
+      if (last && last.kind === "EXECUTABLE" && last.step_type === "COOLDOWN") {
+        steps.splice(lastIndex, 0, newStep);
+      } else {
+        steps.push(newStep);
+      }
+      return { ...d, steps };
+    });
+  };
+
+  const addRepeat = () => {
+    setDraft((d) => {
+      const steps = [...d.steps];
+      const lastIndex = steps.length - 1;
+      const last = steps[lastIndex];
+      const newRepeat = defaultRepeatStep();
+      if (last && last.kind === "EXECUTABLE" && last.step_type === "COOLDOWN") {
+        steps.splice(lastIndex, 0, newRepeat);
+      } else {
+        steps.push(newRepeat);
+      }
+      return { ...d, steps };
+    });
+  };
+
+  const removeTop = (index: number) =>
+    setDraft((d) => ({ ...d, steps: d.steps.filter((_, i) => i !== index) }));
+
+  const handleSubmit = () => {
+    if (!draft.title.trim()) {
+      notifications.show({ color: "red", title: "Erro", message: "Informe um título." });
+      return;
+    }
+    onSubmit({
+      day_of_week: state.dayOfWeek,
+      type: draft.type,
+      title: draft.title.trim(),
+      description: draft.description.trim() || null,
+      steps: draft.steps,
+    });
+  };
+
+  return (
+    <Modal opened={state.open} onClose={onClose} title={title} size="lg">
+      <Stack gap="md">
+        <Group grow>
+          <TextInput
+            label="Título do treino"
+            placeholder="Ex.: Intervalado 4×1km"
+            value={draft.title}
+            onChange={(e) => setDraft({ ...draft, title: e.currentTarget.value })}
+            required
+          />
+          <Select
+            label="Categoria"
+            data={WORKOUT_TYPES.map((t) => ({ value: t, label: WORKOUT_TYPE_LABELS[t] }))}
+            value={draft.type}
+            onChange={(v) => v && setDraft({ ...draft, type: v as WorkoutType })}
+            allowDeselect={false}
+          />
+        </Group>
+
+        <Stack gap="xs">
+          <Title order={5}>Visão geral</Title>
+          <Textarea
+            label="Adicionar notas"
+            placeholder="Descrição geral do treino"
+            autosize
+            minRows={2}
+            value={draft.description}
+            onChange={(e) => setDraft({ ...draft, description: e.currentTarget.value })}
+          />
+        </Stack>
+
+        <Divider />
+
+        <Stack gap="xs">
+          <Title order={5}>Passos</Title>
+          <Stack gap="xs">
+            {draft.steps.map((step, idx) => {
+              if (step.kind === "EXECUTABLE") {
+                return (
+                  <StepRow
+                    key={idx}
+                    step={step}
+                    onClick={() => setEditing({ topIndex: idx, childIndex: null })}
+                    onRemove={() => removeTop(idx)}
+                  />
+                );
+              }
+              return (
+                <RepeatRow
+                  key={idx}
+                  step={step}
+                  onChangeCount={(count) =>
+                    setDraft((d) => {
+                      const steps = [...d.steps];
+                      steps[idx] = { ...step, repeat_count: count };
+                      return { ...d, steps };
+                    })
+                  }
+                  onAddChild={() =>
+                    setDraft((d) => {
+                      const steps = [...d.steps];
+                      steps[idx] = {
+                        ...step,
+                        children: [...step.children, defaultExecutableStep("RUN")],
+                      };
+                      return { ...d, steps };
+                    })
+                  }
+                  onChildClick={(childIndex) =>
+                    setEditing({ topIndex: idx, childIndex })
+                  }
+                  onChildRemove={(childIndex) =>
+                    setDraft((d) => {
+                      const steps = [...d.steps];
+                      steps[idx] = {
+                        ...step,
+                        children: step.children.filter((_, i) => i !== childIndex),
+                      };
+                      return { ...d, steps };
+                    })
+                  }
+                  onRemove={() => removeTop(idx)}
+                />
+              );
+            })}
+          </Stack>
+          <Group>
+            <Button variant="default" onClick={addStep}>
+              + adicionar etapa
+            </Button>
+            <Button variant="default" onClick={addRepeat}>
+              + adicionar repetição
+            </Button>
+          </Group>
+        </Stack>
+
+        <Group justify="flex-end" mt="sm">
+          <Button variant="default" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSubmit} loading={submitting}>
+            {state.block ? "Salvar" : "Adicionar"}
+          </Button>
+        </Group>
+      </Stack>
+
+      {editingStep && (
+        <StepEditor
+          opened={editing != null}
+          step={editingStep}
+          onClose={() => setEditing(null)}
+          onSave={updateStep}
+        />
+      )}
+    </Modal>
+  );
+}
 
 function BlockCard({
   block,
@@ -96,13 +435,10 @@ function BlockCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const details: string[] = [];
-  if (block.distance_km != null) details.push(`${block.distance_km} km`);
-  if (block.duration_minutes != null) details.push(`${block.duration_minutes} min`);
-  if (block.target_pace_seconds != null) details.push(`${formatPace(block.target_pace_seconds)}/km`);
+  const summary = blockSummary(block.steps);
 
   return (
-    <Card p="xs" radius="sm" withBorder shadow="none" style={{ cursor: "pointer" }}>
+    <Card p="xs" radius="sm" withBorder shadow="none">
       <Stack gap={4}>
         <Group justify="space-between" wrap="nowrap" gap={4}>
           <Badge size="xs" color={WORKOUT_TYPE_COLORS[block.type]} variant="light">
@@ -126,140 +462,13 @@ function BlockCard({
         <Text size="xs" fw={600} lineClamp={2}>
           {block.title}
         </Text>
-        {details.length > 0 && (
-          <Text size="xs" c="dimmed">
-            {details.join(" · ")}
+        {summary && (
+          <Text size="xs" c="dimmed" lineClamp={2}>
+            {summary}
           </Text>
         )}
       </Stack>
     </Card>
-  );
-}
-
-function BlockFormModal({
-  state,
-  onClose,
-  onSubmit,
-  submitting,
-}: {
-  state: BlockModalState;
-  onClose: () => void;
-  onSubmit: (values: WorkoutBlockPayload) => void;
-  submitting: boolean;
-}) {
-  const form = useForm<BlockFormValues>({
-    initialValues: emptyForm,
-    validate: {
-      title: (v) => (v.trim().length > 0 ? null : "Informe um título"),
-      pace_text: (v) => (v === "" || parsePace(v) != null ? null : "Pace inválido (M:SS)"),
-    },
-  });
-
-  // Reset form whenever the modal opens for a new/different block.
-  const [lastOpenedKey, setLastOpenedKey] = useState<string>("");
-  const currentKey = state.open
-    ? `${state.weekNumber}-${state.dayOfWeek}-${state.block?.id ?? "new"}`
-    : "";
-
-  if (state.open && currentKey !== lastOpenedKey) {
-    const block = state.block;
-    form.setValues(
-      block
-        ? {
-            type: block.type,
-            title: block.title,
-            description: block.description ?? "",
-            distance_km: block.distance_km ?? "",
-            duration_minutes: block.duration_minutes ?? "",
-            pace_text: block.target_pace_seconds != null ? formatPace(block.target_pace_seconds) : "",
-            notes: block.notes ?? "",
-          }
-        : emptyForm,
-    );
-    setLastOpenedKey(currentKey);
-  }
-
-  const handleSubmit = form.onSubmit((values) => {
-    const paceSeconds = values.pace_text ? parsePace(values.pace_text) : null;
-    onSubmit({
-      day_of_week: state.dayOfWeek,
-      type: values.type,
-      title: values.title.trim(),
-      description: values.description.trim() || null,
-      distance_km: values.distance_km === "" ? null : (values.distance_km as number),
-      duration_minutes:
-        values.duration_minutes === "" ? null : (values.duration_minutes as number),
-      target_pace_seconds: paceSeconds,
-      notes: values.notes.trim() || null,
-    });
-  });
-
-  const dayLabel = DAYS.find((d) => d.value === state.dayOfWeek)?.long ?? "";
-  const title = state.block
-    ? `Editar treino — Semana ${state.weekNumber}, ${dayLabel}`
-    : `Novo treino — Semana ${state.weekNumber}, ${dayLabel}`;
-
-  return (
-    <Modal opened={state.open} onClose={onClose} title={title} size="md">
-      <form onSubmit={handleSubmit}>
-        <Stack gap="sm">
-          <Select
-            label="Tipo de treino"
-            data={WORKOUT_TYPES.map((t) => ({ value: t, label: WORKOUT_TYPE_LABELS[t] }))}
-            {...form.getInputProps("type")}
-            required
-          />
-          <TextInput
-            label="Título"
-            placeholder="Longão de 14km"
-            {...form.getInputProps("title")}
-            required
-          />
-          <Textarea
-            label="Descrição"
-            placeholder="Detalhes do treino"
-            autosize
-            minRows={2}
-            {...form.getInputProps("description")}
-          />
-          <Group grow>
-            <NumberInput
-              label="Distância (km)"
-              placeholder="opcional"
-              min={0}
-              decimalScale={2}
-              {...form.getInputProps("distance_km")}
-            />
-            <NumberInput
-              label="Duração (min)"
-              placeholder="opcional"
-              min={0}
-              {...form.getInputProps("duration_minutes")}
-            />
-            <TextInput
-              label="Pace alvo (M:SS)"
-              placeholder="opcional — 4:30"
-              {...form.getInputProps("pace_text")}
-            />
-          </Group>
-          <Textarea
-            label="Observações"
-            placeholder="opcional"
-            autosize
-            minRows={1}
-            {...form.getInputProps("notes")}
-          />
-          <Group justify="flex-end" mt="sm">
-            <Button variant="default" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" loading={submitting}>
-              {state.block ? "Salvar" : "Adicionar"}
-            </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
   );
 }
 
@@ -478,7 +687,7 @@ export function AdminPlanEditorPage() {
         </Table>
       </Box>
 
-      <BlockFormModal
+      <BlockModal
         state={modalState}
         onClose={() => setModalState((s) => ({ ...s, open: false }))}
         onSubmit={handleSubmitBlock}
